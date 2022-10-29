@@ -23,7 +23,7 @@
       <label>name:
         <input name="player-name" type="text" />
       </label>
-      <button type="submit">Save</button>
+      <button type="submit">Start New Game</button>
     </form>
     <script src="/socket.io/socket.io.js"></script>
     <script>
@@ -50,13 +50,24 @@
 
       // dom elements
       const form = document.querySelector('form');
+      const submitBtn = document.querySelector('button[type=submit]')
       const board = document.getElementById('board');
-      const leftPaddle = document.getElementById('left-paddle');
-      const rightPaddle = document.getElementById('right-paddle');
+      let leftPaddle = document.getElementById('left-paddle');
+      let rightPaddle = document.getElementById('right-paddle');
 
       // helpers
       const isTooHigh = y => y <= 0;
       const isTooLow = y => y + 40 >= svgHeight;
+      const socketOn = (msg, cb) => {
+        socket.on(msg, (data) => {
+          console.log(`received ${msg} message from ${data.playerId}`);
+
+          cb(data);
+        })
+      }
+      
+      // other
+      let waitingForOpponentIntervalId;
       
       // initialize
       board.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
@@ -66,33 +77,63 @@
       rightPaddle.setAttribute('y', rightY);
       
       // emit websocket msg if ball pos has changed
-      setInterval(emitMessageLoop = () => {
-        if (paddleDirection === IDLE) {
-          return;
-        }
+      const enableGameLoop = () => {
+        setInterval(emitMessageLoop = () => {
+          if (paddleDirection === IDLE) {
+            return;
+          }
 
-        if (isTooHigh(leftY)) {
-          paddleDirection = DOWN;
-        } else if (isTooLow(leftY)) {
-          paddleDirection = UP;
-        }
+          if (isTooHigh(leftY)) {
+            paddleDirection = DOWN;
+          } else if (isTooLow(leftY)) {
+            paddleDirection = UP;
+          }
 
-        deltaY = paddleDirection === DOWN ? deltaUnit : -deltaUnit; 
-        leftY += deltaY;
-        leftPaddle.setAttribute('y', leftY);
-        rightPaddle.setAttribute('y', rightY);
+          deltaY = paddleDirection === DOWN ? deltaUnit : -deltaUnit; 
+          leftY += deltaY;
+          leftPaddle.setAttribute('y', leftY);
+          rightPaddle.setAttribute('y', rightY);
 
-        socket.emit('ballMove', {id: playerId, y: leftY});
-      }, 50);
+          socket.emit('ballMove', {playerId, y: leftY});
+        }, 50);
+      }
 
-      let isOtherPlayersMove;
-      socket.on('ballMove', function syncServer(data) {
-        isOtherPlayersMove = data.id !== playerId;
+      let isFromOtherPlayer;
+      socketOn('ballMove', function syncServer(data) {
+        isFromOtherPlayer = data.playerId !== playerId;
 
-        if (isOtherPlayersMove) {
+        if (isFromOtherPlayer) {
           rightY = data.y;
         }
       });
+
+      let beginGameWithOpponent;
+      socketOn('joinGame', (data) => {
+        beginGameWithOpponent = data.playerId !== playerId;
+
+        if (beginGameWithOpponent) {
+          clearInterval(waitingForOpponentIntervalId)
+        } else {
+          // since we joined the game. give us control of the right paddle
+          // TODO use better names for paddle vars
+          const tempPaddle = leftPaddle;
+          leftPaddle = rightPaddle;
+          rightPaddle = tempPaddle
+        }
+
+        startGame();
+      });
+      
+      let isAskToJoin;
+      socketOn('waitingForOpponent', (data) => {
+        isAskToJoin = data.playerId !== playerId;
+
+        if (isAskToJoin) {
+          submitBtn.innerHTML = `Join ${data.playerId}'s Game`
+          form.removeEventListener('submit', createNewGame);
+          form.addEventListener('submit', joinGame);
+        }
+      })
 
       const enableGameControls = () => {
         document.addEventListener('keydown', function movePaddle(e) {
@@ -113,17 +154,33 @@
 
       const startGame = () => {
         enableGameControls();
+        enableGameLoop();
       }
 
-      form.addEventListener('submit', function savePlayerInfo(e) {
+      form.addEventListener('submit', createNewGame);
+
+      function joinGame(e) {
         e.preventDefault();
         const formData = new FormData(form);
         const playerName = formData.get('player-name')
 
         playerId = playerName;
 
-        startGame();
-      })
+        socket.emit('joinGame', {playerId})
+      }
+
+      function createNewGame(e) {
+        e.preventDefault();
+        const formData = new FormData(form);
+        const playerName = formData.get('player-name')
+
+        playerId = playerName;
+
+        // broadcast that we need an opponent for our new game
+        waitingForOpponentIntervalId = setInterval(() => {
+          socket.emit('waitingForOpponent', {playerId})
+        }, 250);
+      }
     </script>
   </body>
 </html>

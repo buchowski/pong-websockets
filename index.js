@@ -11,9 +11,19 @@ const io = new Server(httpServer, {
 io.on("connection", (socket) => {
   console.log('we are connected')
 
-  socket.on('chat message', (msg) => {
-    console.log('message: ' + msg);
-    io.emit('chat response', msg);
+  socket.on('ballMove', (data) => {
+    console.log('ballMove message: ' + data);
+    io.emit('ballMove', data);
+  });
+
+  socket.on('waitingForOpponent', (data) => {
+    console.log('waiting message: ' + data);
+    io.emit('waitingForOpponent', data);
+  });
+
+  socket.on('joinGame', (data) => {
+    console.log('join message: ' + data);
+    io.emit('joinGame', data);
   });
 
   socket.on('disconnect', () => {

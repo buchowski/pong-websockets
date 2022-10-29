@@ -79,6 +79,9 @@
       // emit websocket msg if ball pos has changed
       const enableGameLoop = () => {
         setInterval(emitMessageLoop = () => {
+          // always update the opponent's paddle pos
+          rightPaddle.setAttribute('y', rightY);
+
           if (paddleDirection === IDLE) {
             return;
           }
@@ -92,7 +95,6 @@
           deltaY = paddleDirection === DOWN ? deltaUnit : -deltaUnit; 
           leftY += deltaY;
           leftPaddle.setAttribute('y', leftY);
-          rightPaddle.setAttribute('y', rightY);
 
           socket.emit('ballMove', {playerId, y: leftY});
         }, 50);

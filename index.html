@@ -22,14 +22,16 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
       var socket = io();  
+      const UP = 'UP';
+      const DOWN = 'DOWN';
+      const IDLE = 'IDLE';
 
       // leftPaddle
       let leftX = 50;
       let leftY = 100;
-      let prevLeftX = leftX;
-      let prevLeftY = leftY;
-      let deltaX = 3;
-      let deltaY = 3;
+      const deltaUnit = 3;
+      let deltaY = 0;
+      let paddleDirection = IDLE;
 
       // rightPaddle
       let rightX = 500;
@@ -38,12 +40,15 @@
       // other
       const svgHeight = 400;
       const svgWidth = 600;
-      let hasUpdatedPos = true;
       
       // dom elements
       var board = document.getElementById('board');
       const leftPaddle = document.getElementById('left-paddle');
       const rightPaddle = document.getElementById('right-paddle');
+
+      // helpers
+      const isTooHigh = y => y <= 0;
+      const isTooLow = y => y + 40 >= svgHeight;
       
       // initialize
       board.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
@@ -54,13 +59,20 @@
       
       // emit websocket msg if ball pos has changed
       setInterval(emitMessageLoop = () => {
-        hasUpdatedPos = leftX !== prevLeftX || leftY !== prevLeftY;
-
-        if (hasUpdatedPos) {
-          prevLeftX = leftX;
-          prevLeftY = leftY;
-          socket.emit('ballMove', {id: 'leftPlayer', x: leftX, y: leftY});
+        if (paddleDirection === IDLE) {
+          return;
         }
+
+        if (isTooHigh(leftY)) {
+          paddleDirection = DOWN;
+        } else if (isTooLow(leftY)) {
+          paddleDirection = UP;
+        }
+
+        deltaY = paddleDirection === DOWN ? deltaUnit : -deltaUnit; 
+        leftY += deltaY;
+        leftPaddle.setAttribute('y', leftY);
+        socket.emit('ballMove', {id: 'leftPlayer', y: leftY});
       }, 50);
 
       // wasd controls ball pos
@@ -69,18 +81,13 @@
 
         switch (e.key) {
           case 'w':
-            if (leftY <= 0) {
-              break;
-            }
-            leftY -= deltaY;
-            leftPaddle.setAttribute('y', leftY)
+            paddleDirection = UP;
             break;
           case 's':
-            if (leftY + 40 >= svgHeight) {
-              break;
-            }
-            leftY += deltaY;
-            leftPaddle.setAttribute('y', leftY) 
+            paddleDirection = DOWN;
+            break;
+          case 'd':
+            paddleDirection = IDLE;
         }
       });
     </script>

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Socket.IO chat</title>
+    <title>Ping Pong</title>
     <style>
       #board {
         background-color: dimgray;
@@ -19,17 +19,28 @@
       <rect id="left-paddle" width="10px" height="40px" />
       <rect id="right-paddle" width="10px" height="40px" />
     </svg>
+    <form>
+      <label>name:
+        <input name="player-name" type="text" />
+      </label>
+      <button type="submit">Save</button>
+    </form>
     <script src="/socket.io/socket.io.js"></script>
     <script>
       var socket = io();  
+      let playerId;
+
+      // constants
       const UP = 'UP';
       const DOWN = 'DOWN';
       const IDLE = 'IDLE';
+      const svgHeight = 400;
+      const svgWidth = 600;
+      const deltaUnit = 3;
 
       // leftPaddle
       let leftX = 50;
       let leftY = 100;
-      const deltaUnit = 3;
       let deltaY = 0;
       let paddleDirection = IDLE;
 
@@ -37,12 +48,9 @@
       let rightX = 500;
       let rightY = 50;
 
-      // other
-      const svgHeight = 400;
-      const svgWidth = 600;
-      
       // dom elements
-      var board = document.getElementById('board');
+      const form = document.querySelector('form');
+      const board = document.getElementById('board');
       const leftPaddle = document.getElementById('left-paddle');
       const rightPaddle = document.getElementById('right-paddle');
 
@@ -72,24 +80,50 @@
         deltaY = paddleDirection === DOWN ? deltaUnit : -deltaUnit; 
         leftY += deltaY;
         leftPaddle.setAttribute('y', leftY);
-        socket.emit('ballMove', {id: 'leftPlayer', y: leftY});
+        rightPaddle.setAttribute('y', rightY);
+
+        socket.emit('ballMove', {id: playerId, y: leftY});
       }, 50);
 
-      // wasd controls ball pos
-      document.addEventListener('keydown', function movePaddle(e) {
-        e.preventDefault();
+      let isOtherPlayersMove;
+      socket.on('ballMove', function syncServer(data) {
+        isOtherPlayersMove = data.id !== playerId;
 
-        switch (e.key) {
-          case 'w':
-            paddleDirection = UP;
-            break;
-          case 's':
-            paddleDirection = DOWN;
-            break;
-          case 'd':
-            paddleDirection = IDLE;
+        if (isOtherPlayersMove) {
+          rightY = data.y;
         }
       });
+
+      const enableGameControls = () => {
+        document.addEventListener('keydown', function movePaddle(e) {
+          e.preventDefault();
+  
+          switch (e.key) {
+            case 'w':
+              paddleDirection = UP;
+              break;
+            case 's':
+              paddleDirection = DOWN;
+              break;
+            case 'd':
+              paddleDirection = IDLE;
+          }
+        });
+      }
+
+      const startGame = () => {
+        enableGameControls();
+      }
+
+      form.addEventListener('submit', function savePlayerInfo(e) {
+        e.preventDefault();
+        const formData = new FormData(form);
+        const playerName = formData.get('player-name')
+
+        playerId = playerName;
+
+        startGame();
+      })
     </script>
   </body>
 </html>

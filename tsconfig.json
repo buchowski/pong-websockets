@@ -1,0 +1,9 @@
+{
+  "extends": "@tsconfig/recommended",
+  "compilerOptions": {
+    "outDir": "./browser/dist",
+    "allowJs": true,
+    "target": "es5"
+  },
+  "include": ["./browser/src/**/*"]
+}

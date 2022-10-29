@@ -1,6 +1,24 @@
+type WsBaseDataType = {
+  playerId: string;
+}
 
-var socket = io();  
-let playerId;
+type WsBallMoveType = WsBaseDataType & {
+  y: number;
+}
+
+type SocketType = {
+  on: any;
+  emit: any;
+}
+
+var socket: SocketType;
+
+function initSocket(io: any) {
+  socket = io();
+  subscribe();
+}
+
+let playerId: string;
 
 // constants
 const UP = 'UP';
@@ -21,17 +39,19 @@ let rightX = 500;
 let rightY = 50;
 
 // dom elements
-const form = document.querySelector('form');
-const submitBtn = document.querySelector('button[type=submit]')
-const board = document.getElementById('board');
-let leftPaddle = document.getElementById('left-paddle');
-let rightPaddle = document.getElementById('right-paddle');
+const dummy = document.createElement('form')
+const form = document.querySelector('form') || dummy;
+const submitBtn = document.querySelector('button[type=submit]') || dummy;
+const board = document.getElementById('board') || dummy;
+let leftPaddle = document.getElementById('left-paddle') || dummy;
+let rightPaddle = document.getElementById('right-paddle') || dummy;
 
 // helpers
-const isTooHigh = y => y <= 0;
-const isTooLow = y => y + 40 >= svgHeight;
-const socketOn = (msg, cb) => {
-  socket.on(msg, (data) => {
+const s = (n: any) => String(n)
+const isTooHigh = (y: number) => y <= 0;
+const isTooLow = (y: number) => y + 40 >= svgHeight;
+function socketOn<T extends {playerId: string}>(msg: string, cb: (data: T) => void): void {
+  socket.on(msg, (data: T) => {
     console.log(`received ${msg} message from ${data.playerId}`);
 
     cb(data);
@@ -39,20 +59,20 @@ const socketOn = (msg, cb) => {
 }
 
 // other
-let waitingForOpponentIntervalId;
+let waitingForOpponentIntervalId: number;
 
 // initialize
 board.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
-leftPaddle.setAttribute('x', leftX);
-leftPaddle.setAttribute('y', leftY);
-rightPaddle.setAttribute('x', rightX);
-rightPaddle.setAttribute('y', rightY);
+leftPaddle.setAttribute('x', s(leftX));
+leftPaddle.setAttribute('y', s(leftY));
+rightPaddle.setAttribute('x', s(rightX));
+rightPaddle.setAttribute('y', s(rightY));
 
 // emit websocket msg if ball pos has changed
 const enableGameLoop = () => {
-  setInterval(emitMessageLoop = () => {
+  setInterval(function emitMessageLoop() {
     // always update the opponent's paddle pos
-    rightPaddle.setAttribute('y', rightY);
+    rightPaddle.setAttribute('y', s(rightY));
 
     if (paddleDirection === IDLE) {
       return;
@@ -66,48 +86,51 @@ const enableGameLoop = () => {
 
     deltaY = paddleDirection === DOWN ? deltaUnit : -deltaUnit; 
     leftY += deltaY;
-    leftPaddle.setAttribute('y', leftY);
+    leftPaddle.setAttribute('y', s(leftY));
 
     socket.emit('ballMove', {playerId, y: leftY});
   }, 50);
 }
 
-let isFromOtherPlayer;
-socketOn('ballMove', function syncServer(data) {
-  isFromOtherPlayer = data.playerId !== playerId;
+function subscribe() {
+  let isFromOtherPlayer;
+  socketOn<WsBallMoveType>('ballMove', function syncServer(data) {
+    isFromOtherPlayer = data.playerId !== playerId;
+  
+    if (isFromOtherPlayer) {
+      rightY = data.y;
+    }
+  });
+  
+  let beginGameWithOpponent;
+  socketOn<WsBaseDataType>('joinGame', (data) => {
+    beginGameWithOpponent = data.playerId !== playerId;
+  
+    if (beginGameWithOpponent) {
+      clearInterval(waitingForOpponentIntervalId)
+    } else {
+      // since we joined the game. give us control of the right paddle
+      // TODO use better names for paddle vars
+      const tempPaddle = leftPaddle;
+      leftPaddle = rightPaddle;
+      rightPaddle = tempPaddle
+    }
+  
+    startGame();
+  });
+  
+  let isAskToJoin;
+  socketOn<WsBaseDataType>('waitingForOpponent', (data) => {
+    isAskToJoin = data.playerId !== playerId;
+  
+    if (isAskToJoin) {
+      submitBtn.innerHTML = `Join ${data.playerId}'s Game`
+      form.removeEventListener('submit', createNewGame);
+      form.addEventListener('submit', joinGame);
+    }
+  })
+}
 
-  if (isFromOtherPlayer) {
-    rightY = data.y;
-  }
-});
-
-let beginGameWithOpponent;
-socketOn('joinGame', (data) => {
-  beginGameWithOpponent = data.playerId !== playerId;
-
-  if (beginGameWithOpponent) {
-    clearInterval(waitingForOpponentIntervalId)
-  } else {
-    // since we joined the game. give us control of the right paddle
-    // TODO use better names for paddle vars
-    const tempPaddle = leftPaddle;
-    leftPaddle = rightPaddle;
-    rightPaddle = tempPaddle
-  }
-
-  startGame();
-});
-
-let isAskToJoin;
-socketOn('waitingForOpponent', (data) => {
-  isAskToJoin = data.playerId !== playerId;
-
-  if (isAskToJoin) {
-    submitBtn.innerHTML = `Join ${data.playerId}'s Game`
-    form.removeEventListener('submit', createNewGame);
-    form.addEventListener('submit', joinGame);
-  }
-})
 
 const enableGameControls = () => {
   document.addEventListener('keydown', function movePaddle(e) {
@@ -133,25 +156,25 @@ const startGame = () => {
 
 form.addEventListener('submit', createNewGame);
 
-function joinGame(e) {
+function joinGame(e: Event) {
   e.preventDefault();
   const formData = new FormData(form);
   const playerName = formData.get('player-name')
 
-  playerId = playerName;
+  playerId = s(playerName);
 
   socket.emit('joinGame', {playerId})
 }
 
-function createNewGame(e) {
+function createNewGame(e: Event) {
   e.preventDefault();
   const formData = new FormData(form);
   const playerName = formData.get('player-name')
 
-  playerId = playerName;
+  playerId = s(playerName);
 
   // broadcast that we need an opponent for our new game
-  waitingForOpponentIntervalId = setInterval(() => {
+  waitingForOpponentIntervalId = window.setInterval(() => {
     socket.emit('waitingForOpponent', {playerId})
   }, 250);
 }

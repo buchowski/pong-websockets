@@ -4,40 +4,54 @@
     <title>Socket.IO chat</title>
     <style>
       #board {
-        height: 50vw;
         background-color: dimgray;
       }
-      #left-ball {
+      #left-paddle {
         fill: red;
       }
-      #right-ball {
+      #right-paddle {
         fill: lightskyblue;
       }
     </style>
   </head>
   <body>
     <svg id="board">
-      <circle id="left-ball" r="10" />
-      <circle id="right-ball" r="10" />
+      <rect id="left-paddle" width="10px" height="40px" />
+      <rect id="right-paddle" width="10px" height="40px" />
     </svg>
     <script src="/socket.io/socket.io.js"></script>
     <script>
       var socket = io();  
+
+      // leftPaddle
       let leftX = 50;
       let leftY = 100;
       let prevLeftX = leftX;
       let prevLeftY = leftY;
       let deltaX = 3;
       let deltaY = 3;
+
+      // rightPaddle
+      let rightX = 500;
+      let rightY = 50;
+
+      // other
+      const svgHeight = 400;
+      const svgWidth = 600;
       let hasUpdatedPos = true;
-
+      
+      // dom elements
       var board = document.getElementById('board');
-      const leftBall = document.getElementById('left-ball');
-
+      const leftPaddle = document.getElementById('left-paddle');
+      const rightPaddle = document.getElementById('right-paddle');
+      
       // initialize
-      leftBall.setAttribute('cx', leftX);
-      leftBall.setAttribute('cy', leftY);
-
+      board.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+      leftPaddle.setAttribute('x', leftX);
+      leftPaddle.setAttribute('y', leftY);
+      rightPaddle.setAttribute('x', rightX);
+      rightPaddle.setAttribute('y', rightY);
+      
       // emit websocket msg if ball pos has changed
       setInterval(emitMessageLoop = () => {
         hasUpdatedPos = leftX !== prevLeftX || leftY !== prevLeftY;
@@ -50,25 +64,23 @@
       }, 50);
 
       // wasd controls ball pos
-      document.addEventListener('keydown', function(e) {
+      document.addEventListener('keydown', function movePaddle(e) {
         e.preventDefault();
 
         switch (e.key) {
           case 'w':
+            if (leftY <= 0) {
+              break;
+            }
             leftY -= deltaY;
-            leftBall.setAttribute('cy', leftY)
+            leftPaddle.setAttribute('y', leftY)
             break;
           case 's':
+            if (leftY + 40 >= svgHeight) {
+              break;
+            }
             leftY += deltaY;
-            leftBall.setAttribute('cy', leftY) 
-            break;
-          case 'd':
-            leftX += deltaX;
-            leftBall.setAttribute('cx', leftX) 
-            break;
-          case 'a':
-            leftX -= deltaX;
-            leftBall.setAttribute('cx', leftX) 
+            leftPaddle.setAttribute('y', leftY) 
         }
       });
     </script>

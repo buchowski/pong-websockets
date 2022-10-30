@@ -14,14 +14,22 @@ type SocketType = {
 }
 
 var socket: SocketType;
+var io: any;
 
-function initSocket(io: any) {
-  socket = io();
+// index.html gives us a socket.io reference
+// we can init if the user creates a multiplayer game
+function injectSocketIO(io: any) {
+  io = io;
+}
+
+function initSocket() {
+  var socket = io();
   subscribe();
 }
 
 let playerId: string;
 let isPlayerCreator: boolean;
+let isMultiplayer: boolean;
 
 // constants
 const UP = 'UP';
@@ -29,7 +37,7 @@ const DOWN = 'DOWN';
 const IDLE = 'IDLE';
 const svgHeight = 400;
 const svgWidth = 600;
-const deltaUnit = 3;
+const paddleDeltaY = 6;
 const paddleWidth = 10;
 const paddleHeight = 40;
 
@@ -151,7 +159,7 @@ const enableGameLoop = () => {
     }
 
     // set paddle pos
-    deltaY = paddleDirection === DOWN ? deltaUnit : -deltaUnit; 
+    deltaY = paddleDirection === DOWN ? paddleDeltaY : -paddleDeltaY; 
     leftY += deltaY;
     leftPaddle.setAttribute('y', s(leftY));
 
@@ -169,7 +177,9 @@ const enableGameLoop = () => {
       ballY += ballDeltaY;
     }
 
-    socketEmit<WsBallMoveType>('ballMove', {playerId, y: leftY, ballX, ballY});
+    if (isMultiplayer) {
+      socketEmit<WsBallMoveType>('ballMove', {playerId, y: leftY, ballX, ballY});
+    }
   }, 50);
 }
 
@@ -253,12 +263,19 @@ function createNewGame(e: Event) {
   e.preventDefault();
   const formData = new FormData(form);
   const playerName = formData.get('player-name')
+  isMultiplayer = Boolean(formData.get('is-multiplayer'));
 
   playerId = s(playerName);
   isPlayerCreator = true;
 
-  // broadcast that we need an opponent for our new game
-  waitingForOpponentIntervalId = window.setInterval(() => {
-    socketEmit<WsBaseDataType>('waitingForOpponent', {playerId})
-  }, 250);
+  if (isMultiplayer) {
+    initSocket();
+    // broadcast that we need an opponent for our new game
+    waitingForOpponentIntervalId = window.setInterval(() => {
+      socketEmit<WsBaseDataType>('waitingForOpponent', {playerId})
+    }, 250);
+  } else {
+    // play against bot
+    startGame();
+  }
 }

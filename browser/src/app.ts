@@ -9,8 +9,8 @@ type WsBallMoveType = WsBaseDataType & {
 }
 
 type SocketType = {
-  on: any;
-  emit: any;
+  on: (msg: Msg, cb: any) => void;
+  emit: (msg: Msg, data: any) => void;
 }
 
 var socket: SocketType;
@@ -23,7 +23,32 @@ function injectSocketIO(io: any) {
 }
 
 function initSocket() {
-  var socket = io();
+  socket = io();
+  subscribe();
+}
+
+enum Msg {
+  AskJoin,
+  AcceptJoin,
+  ChangePaddleDirection,
+  ChangeBallDirection,
+}
+
+class BotSocket {
+  on() {
+
+  } 
+  emit(msg: Msg) {
+    if (msg === Msg.AskJoin) {
+      console.log('clear waiting intervalId: ' + waitingForOpponentIntervalId);
+      clearInterval(waitingForOpponentIntervalId)
+      startGame();
+    }
+  }
+}
+
+function initBotSocket() {
+  socket  = new BotSocket()
   subscribe();
 }
 
@@ -115,14 +140,14 @@ const getIsCollision = ({ballX, ballY, paddleX, paddleY}: GetIsCollisionArgType)
   return {isCollision: false}
 }
 
-function socketOn<T extends {playerId: string}>(msg: string, cb: (data: T) => void): void {
+function socketOn<T extends {playerId: string}>(msg: Msg, cb: (data: T) => void): void {
   socket.on(msg, (data: T) => {
     console.log(`received ${msg} message from ${data.playerId}`);
 
     cb(data);
   })
 }
-function socketEmit<T>(msg: string, data: T): void {
+function socketEmit<T>(msg: Msg, data: T): void {
   socket.emit(msg, data)
 }
 
@@ -180,56 +205,26 @@ const enableGameLoop = () => {
       ballY += ballDeltaY;
     }
 
-    socketEmit<WsBallMoveType>('ballMove', {playerId, y: leftY, ballX, ballY});
-  }, 50);
-}
-
-const enableSinglePlayerGameLoop = () => {
-  setInterval(function emitMessageLoop() {
-    const isIdle = paddleDirection === IDLE;
-    // always update the ball && the opponent's paddle pos
-    // rightPaddle.setAttribute('y', s(rightY));
-    ball.setAttribute('cx', s(ballX));
-    ball.setAttribute('cy', s(ballY));
-
-    if (isPaddleTooHigh(leftY)) {
-      paddleDirection = DOWN;
-    } else if (isPaddleTooLow(leftY)) {
-      paddleDirection = UP;
-    }
-
-    // set paddle pos
-    if (!isIdle) {
-      deltaY = paddleDirection === DOWN ? paddleDeltaY : -paddleDeltaY; 
-      leftY += deltaY;
-      leftPaddle.setAttribute('y', s(leftY));
-    }
-
-    const {isCollision} = getIsCollision({ballX, ballY, paddleX: leftX, paddleY: leftY});
-    const {validDeltaX, validDeltaY} = getValidBallDeltas(ballX, ballY);
-    ballDeltaX = validDeltaX;
-    ballDeltaY = validDeltaY;
-    ballX += ballDeltaX;
-    ballY += ballDeltaY;
+    // socketEmit<WsBallMoveType>('ballMove', {playerId, y: leftY, ballX, ballY});
   }, 50);
 }
 
 function subscribe() {
   let isFromOtherPlayer;
-  socketOn<WsBallMoveType>('ballMove', function syncServer(data) {
-    isFromOtherPlayer = data.playerId !== playerId;
+  // socketOn<WsBallMoveType>('ballMove', function syncServer(data) {
+  //   isFromOtherPlayer = data.playerId !== playerId;
   
-    if (isFromOtherPlayer) {
-      rightY = data.y;
-    }
-    if (!isPlayerCreator) {
-      ballX = data.ballX;
-      ballY = data.ballY;
-    }
-  });
+  //   if (isFromOtherPlayer) {
+  //     rightY = data.y;
+  //   }
+  //   if (!isPlayerCreator) {
+  //     ballX = data.ballX;
+  //     ballY = data.ballY;
+  //   }
+  // });
   
   let beginGameWithOpponent;
-  socketOn<WsBaseDataType>('joinGame', (data) => {
+  socketOn<WsBaseDataType>(Msg.AcceptJoin, (data) => {
     beginGameWithOpponent = data.playerId !== playerId;
   
     if (beginGameWithOpponent) {
@@ -246,7 +241,7 @@ function subscribe() {
   });
   
   let isAskToJoin;
-  socketOn<WsBaseDataType>('waitingForOpponent', (data) => {
+  socketOn<WsBaseDataType>(Msg.AskJoin, (data) => {
     isAskToJoin = data.playerId !== playerId;
   
     if (isAskToJoin) {
@@ -278,10 +273,6 @@ const startGame = () => {
   enableGameControls();
   enableGameLoop();
 }
-const startSinglePlayerGame = () => {
-  enableGameControls();
-  enableSinglePlayerGameLoop();
-}
 
 function joinGame(e: Event) {
   e.preventDefault();
@@ -291,7 +282,7 @@ function joinGame(e: Event) {
   playerId = s(playerName);
   isPlayerCreator = false;
 
-  socketEmit<WsBaseDataType>('joinGame', {playerId})
+  socketEmit<WsBaseDataType>(Msg.AcceptJoin, {playerId})
 }
 
 function createNewGame(e: Event) {
@@ -305,11 +296,11 @@ function createNewGame(e: Event) {
 
   if (isMultiplayer) {
     initSocket();
-    // broadcast that we need an opponent for our new game
-    waitingForOpponentIntervalId = window.setInterval(() => {
-      socketEmit<WsBaseDataType>('waitingForOpponent', {playerId})
-    }, 250);
   } else {
-    startSinglePlayerGame();
+    initBotSocket();
   }
+  // broadcast that we need an opponent for our new game
+  waitingForOpponentIntervalId = window.setInterval(() => {
+    socketEmit<WsBaseDataType>(Msg.AskJoin, {playerId})
+  }, 250);
 }

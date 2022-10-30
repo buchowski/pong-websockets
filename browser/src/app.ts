@@ -34,25 +34,26 @@ function initSocket() {
 }
 
 enum Msg {
-  AskJoin,
-  AcceptJoin,
-  ChangePaddleDirection,
-  ChangeBallDirection,
+  AskJoin = 'ASK_JOIN',
+  AcceptJoin = 'ACCEPT_JOIN',
+  ChangePaddleDirection = 'CHANGE_PADDLE_DIRECTION',
+  ChangeBallDirection = 'CHANGE_BALL_DIRECTION',
 }
 
 enum Direction {
-  Up,
-  Down,
-  Idle,
+  Up = 'UP',
+  Down = 'DOWN',
+  Idle = 'IDLE',
 }
 
 class BotSocket {
   on() {
 
   } 
-  emit(msg: Msg) {
+  emit(msg: Msg, data: any) {
+    console.log('BotSocket emit ', msg, data);
+
     if (msg === Msg.AskJoin) {
-      console.log('clear waiting intervalId: ' + waitingForOpponentIntervalId);
       clearInterval(waitingForOpponentIntervalId)
       startGame();
     }
@@ -82,9 +83,10 @@ let deltaY = 0;
 let paddleDirection = Direction.Idle;
 
 // rightPaddle
-let rightPaddleDirection = Direction.Idle;
 let rightX = 500;
 let rightY = 50;
+let rightDeltaY = 0;
+let rightPaddleDirection = Direction.Idle;
 
 // ball = radius should match what's inside index.html
 let ballRadius = 6;
@@ -174,46 +176,64 @@ ball.setAttribute('cx', s(ballX));
 ball.setAttribute('cy', s(ballY));
 form.addEventListener('submit', createNewGame);
 
-// emit websocket msg if ball pos has changed
-const enableGameLoop = () => {
-  setInterval(function emitMessageLoop() {
-    const isIdle = paddleDirection === Direction.Idle;
-    // always update the ball && the opponent's paddle pos
-    rightPaddle.setAttribute('y', s(rightY));
-    ball.setAttribute('cx', s(ballX));
-    ball.setAttribute('cy', s(ballY));
 
-    // only creator broadcasts ball pos so nothing to broadcast if non-creator is idle
-    if (!isPlayerCreator && isIdle) {
-      return;
-    }
+const setPaddleDirections = () => {
+  // our paddle
+  if (isPaddleTooHigh(leftY)) {
+    paddleDirection = Direction.Down;
+  } else if (isPaddleTooLow(leftY)) {
+    paddleDirection = Direction.Up;
+  }
+  
+  // opponent's paddle
+  if (isPaddleTooHigh(rightY)) {
+    rightPaddleDirection = Direction.Down;
+  } else if (isPaddleTooLow(rightY)) {
+    rightPaddleDirection = Direction.Up;
+  }
+}
 
-    if (isPaddleTooHigh(leftY)) {
-      paddleDirection = Direction.Down;
-    } else if (isPaddleTooLow(leftY)) {
-      paddleDirection = Direction.Up;
-    }
+const setPaddlePositions = () => {
+    const isLeftIdle = paddleDirection === Direction.Idle;
+    const isRightIdle = rightPaddleDirection === Direction.Idle;
 
-    // set paddle pos
-    if (!isIdle) {
+    if (!isLeftIdle) {
       deltaY = paddleDirection === Direction.Down ? paddleDeltaY : -paddleDeltaY; 
       leftY += deltaY;
       leftPaddle.setAttribute('y', s(leftY));
     }
 
-    const {isCollision} = getIsCollision({ballX, ballY, paddleX: leftX, paddleY: leftY});
-    // update ball pos if is creator
-    if (isPlayerCreator && isCollision) {
-      ballDeltaX = -ballDeltaX;
-      ballX += ballDeltaX;
-      ballY += ballDeltaY;
-    } else if (isPlayerCreator) {
-      const {validDeltaX, validDeltaY} = getValidBallDeltas(ballX, ballY);
-      ballDeltaX = validDeltaX;
-      ballDeltaY = validDeltaY;
-      ballX += ballDeltaX;
-      ballY += ballDeltaY;
+    if (!isRightIdle) {
+      rightDeltaY = rightPaddleDirection === Direction.Down ? paddleDeltaY : -paddleDeltaY; 
+      rightY += rightDeltaY;
+      rightPaddle.setAttribute('y', s(rightY));
     }
+}
+
+const setBallPosition = () => {
+  const {validDeltaX, validDeltaY} = getValidBallDeltas(ballX, ballY);
+  ballDeltaX = validDeltaX;
+  ballDeltaY = validDeltaY;
+  ballX += ballDeltaX;
+  ballY += ballDeltaY;
+  ball.setAttribute('cx', s(ballX));
+  ball.setAttribute('cy', s(ballY));
+}
+
+const enableGameLoop = () => {
+  setInterval(function emitMessageLoop() {
+    setPaddleDirections();
+    setPaddlePositions();
+    setBallPosition();
+
+    // const {isCollision} = getIsCollision({ballX, ballY, paddleX: leftX, paddleY: leftY});
+    // update ball pos if is creator
+    // if (isPlayerCreator && isCollision) {
+    //   ballDeltaX = -ballDeltaX;
+    //   ballX += ballDeltaX;
+    //   ballY += ballDeltaY;
+    // } else if (isPlayerCreator) {
+    // }
 
     // socketEmit<WsBallMoveType>('ballMove', {playerId, y: leftY, ballX, ballY});
   }, 50);
@@ -267,16 +287,25 @@ function subscribe() {
 const enableGameControls = () => {
   document.addEventListener('keydown', function movePaddle(e) {
     e.preventDefault();
+    let direction;
 
-    switch (e.key) {
-      case 'w':
-        paddleDirection = Direction.Up;
-        break;
-      case 's':
-        paddleDirection = Direction.Down;
-        break;
-      case 'd':
-        paddleDirection = Direction.Idle;
+    if (e.key === 'w') {
+      direction = Direction.Up;
+    } else if (e.key === 's') {
+      direction = Direction.Down;
+    } else if (e.key === 'd') {
+      direction = Direction.Idle;
+    }
+
+    if (!direction) {
+      return;
+    }
+
+    const isUpdateDirection = direction !== paddleDirection;
+
+    if (isUpdateDirection) {
+      paddleDirection = direction;
+      socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId, direction})
     }
   });
 }

@@ -14,6 +14,8 @@ type JoinPayloadType = {
   playerId: string;
 }
 
+type MsgPayload = ChangeBallDirectionPayloadType | ChangeBallDirectionPayloadType | JoinPayloadType;
+
 type SocketType = {
   on: (msg: Msg, cb: any) => void;
   emit: (msg: Msg, data: any) => void;
@@ -33,6 +35,11 @@ function initSocket() {
   subscribe();
 }
 
+function initBotSocket() {
+  socket  = new BotSocket()
+  subscribe();
+}
+
 enum Msg {
   AskJoin = 'ASK_JOIN',
   AcceptJoin = 'ACCEPT_JOIN',
@@ -46,24 +53,35 @@ enum Direction {
   Idle = 'IDLE',
 }
 
-class BotSocket {
-  on() {
+type MsgCbType = (data: MsgPayload) => void;
+type MsgCbMapType = {
+  [key in Msg]?: MsgCbType;
+};
 
+class BotSocket {
+  onHandlerMap: MsgCbMapType= {};
+
+  on(msg: Msg, cb: MsgCbType) {
+    this.onHandlerMap[msg] = cb;
   } 
   emit(msg: Msg, data: any) {
     console.log('BotSocket emit ', msg, data);
 
-    if (msg === Msg.AskJoin) {
+    // single player doesn't use AcceptJoin or AskJoin skip on() call
+    if (msg === Msg.AcceptJoin) {
+      return;
+    } else if (msg === Msg.AskJoin) {
       clearInterval(waitingForOpponentIntervalId)
       startGame();
+    }
+
+    const cb = this.onHandlerMap[msg];
+    if (cb) {
+      cb(data);
     }
   }
 }
 
-function initBotSocket() {
-  socket  = new BotSocket()
-  subscribe();
-}
 
 let playerId: string;
 let isPlayerCreator: boolean;

@@ -140,8 +140,8 @@ const getIsCollision = ({ballX, ballY, paddleX, paddleY}: GetIsCollisionArgType)
   const paddleBottomMost = paddleY + paddleHeight;
   const doesBallRightOverlap = isPointWithinRange(ballRightMost, paddleLeftMost, paddleRightMost);
   const doesBallLeftOverlap = isPointWithinRange(ballLeftMost, paddleLeftMost, paddleRightMost);
-  const doesBallTopOverlap = isPointWithinRange(ballTopMost, paddleBottomMost, paddleTopMost);
-  const doesBallBottomOverlap = isPointWithinRange(ballBottomMost, paddleBottomMost, paddleTopMost);
+  const doesBallTopOverlap = isPointWithinRange(ballTopMost, paddleTopMost, paddleBottomMost);
+  const doesBallBottomOverlap = isPointWithinRange(ballBottomMost, paddleTopMost, paddleBottomMost);
   const doesXOverlap = doesBallRightOverlap || doesBallLeftOverlap;
   const doesYOverlap = doesBallBottomOverlap || doesBallTopOverlap;
 
@@ -175,7 +175,6 @@ rightPaddle.setAttribute('y', s(rightY));
 ball.setAttribute('cx', s(ballX));
 ball.setAttribute('cy', s(ballY));
 form.addEventListener('submit', createNewGame);
-
 
 const setPaddleDirections = () => {
   // our paddle
@@ -224,18 +223,14 @@ const enableGameLoop = () => {
   setInterval(function emitMessageLoop() {
     setPaddleDirections();
     setPaddlePositions();
+    
+    const {isCollision} = getIsCollision({ballX, ballY, paddleX: leftX, paddleY: leftY});
+    if (isCollision) {
+      ballDeltaX = -ballDeltaX;
+      socketEmit<ChangeBallDirectionPayloadType>(Msg.ChangeBallDirection, {playerId, deltaX: ballDeltaX, deltaY: ballDeltaY});
+    }
     setBallPosition();
 
-    // const {isCollision} = getIsCollision({ballX, ballY, paddleX: leftX, paddleY: leftY});
-    // update ball pos if is creator
-    // if (isPlayerCreator && isCollision) {
-    //   ballDeltaX = -ballDeltaX;
-    //   ballX += ballDeltaX;
-    //   ballY += ballDeltaY;
-    // } else if (isPlayerCreator) {
-    // }
-
-    // socketEmit<WsBallMoveType>('ballMove', {playerId, y: leftY, ballX, ballY});
   }, 50);
 }
 

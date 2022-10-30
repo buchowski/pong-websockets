@@ -4,7 +4,6 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "tsc && cp ./browser/dist/app.js ./public/app.js",
     "dev": "tsc -w",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

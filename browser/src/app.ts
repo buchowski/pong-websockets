@@ -30,6 +30,8 @@ const IDLE = 'IDLE';
 const svgHeight = 400;
 const svgWidth = 600;
 const deltaUnit = 3;
+const paddleWidth = 10;
+const paddleHeight = 40;
 
 // leftPaddle
 let leftX = 50;
@@ -78,6 +80,33 @@ const getValidBallDeltas = (ballX: number, ballY: number) => {
 
   return {validDeltaX, validDeltaY};
 }
+const isPointWithinRange = (point: number, startRange: number, endRange: number) => {
+  return point >= startRange && point <= endRange;
+}
+type GetIsCollisionArgType = {ballX: number, ballY: number, paddleX: number, paddleY: number};
+const getIsCollision = ({ballX, ballY, paddleX, paddleY}: GetIsCollisionArgType) => {
+  const ballLeftMost = ballX - ballRadius;
+  const ballRightMost = ballX + ballRadius;
+  const ballTopMost = ballY + ballRadius;
+  const ballBottomMost = ballY - ballRadius;
+  const paddleLeftMost = paddleX;
+  const paddleRightMost = paddleX + paddleWidth;
+  const paddleTopMost = paddleY;
+  const paddleBottomMost = paddleY + paddleHeight;
+  const doesBallRightOverlap = isPointWithinRange(ballRightMost, paddleLeftMost, paddleRightMost);
+  const doesBallLeftOverlap = isPointWithinRange(ballLeftMost, paddleLeftMost, paddleRightMost);
+  const doesBallTopOverlap = isPointWithinRange(ballTopMost, paddleBottomMost, paddleTopMost);
+  const doesBallBottomOverlap = isPointWithinRange(ballBottomMost, paddleBottomMost, paddleTopMost);
+  const doesXOverlap = doesBallRightOverlap || doesBallLeftOverlap;
+  const doesYOverlap = doesBallBottomOverlap || doesBallTopOverlap;
+
+  if (doesXOverlap && doesYOverlap) {
+    return {isCollision: true}
+  }
+
+  return {isCollision: false}
+}
+
 function socketOn<T extends {playerId: string}>(msg: string, cb: (data: T) => void): void {
   socket.on(msg, (data: T) => {
     console.log(`received ${msg} message from ${data.playerId}`);
@@ -126,8 +155,13 @@ const enableGameLoop = () => {
     leftY += deltaY;
     leftPaddle.setAttribute('y', s(leftY));
 
+    const {isCollision} = getIsCollision({ballX, ballY, paddleX: leftX, paddleY: leftY});
     // update ball pos if is creator
-    if (isPlayerCreator) {
+    if (isPlayerCreator && isCollision) {
+      ballDeltaX = -ballDeltaX;
+      ballX += ballDeltaX;
+      ballY += ballDeltaY;
+    } else if (isPlayerCreator) {
       const {validDeltaX, validDeltaY} = getValidBallDeltas(ballX, ballY);
       ballDeltaX = validDeltaX;
       ballDeltaY = validDeltaY;

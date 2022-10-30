@@ -142,13 +142,14 @@ form.addEventListener('submit', createNewGame);
 // emit websocket msg if ball pos has changed
 const enableGameLoop = () => {
   setInterval(function emitMessageLoop() {
+    const isIdle = paddleDirection === IDLE;
     // always update the ball && the opponent's paddle pos
     rightPaddle.setAttribute('y', s(rightY));
     ball.setAttribute('cx', s(ballX));
     ball.setAttribute('cy', s(ballY));
 
     // only creator broadcasts ball pos so nothing to broadcast if non-creator is idle
-    if (!isPlayerCreator && paddleDirection === IDLE) {
+    if (!isPlayerCreator && isIdle) {
       return;
     }
 
@@ -159,9 +160,11 @@ const enableGameLoop = () => {
     }
 
     // set paddle pos
-    deltaY = paddleDirection === DOWN ? paddleDeltaY : -paddleDeltaY; 
-    leftY += deltaY;
-    leftPaddle.setAttribute('y', s(leftY));
+    if (!isIdle) {
+      deltaY = paddleDirection === DOWN ? paddleDeltaY : -paddleDeltaY; 
+      leftY += deltaY;
+      leftPaddle.setAttribute('y', s(leftY));
+    }
 
     const {isCollision} = getIsCollision({ballX, ballY, paddleX: leftX, paddleY: leftY});
     // update ball pos if is creator
@@ -177,9 +180,37 @@ const enableGameLoop = () => {
       ballY += ballDeltaY;
     }
 
-    if (isMultiplayer) {
-      socketEmit<WsBallMoveType>('ballMove', {playerId, y: leftY, ballX, ballY});
+    socketEmit<WsBallMoveType>('ballMove', {playerId, y: leftY, ballX, ballY});
+  }, 50);
+}
+
+const enableSinglePlayerGameLoop = () => {
+  setInterval(function emitMessageLoop() {
+    const isIdle = paddleDirection === IDLE;
+    // always update the ball && the opponent's paddle pos
+    // rightPaddle.setAttribute('y', s(rightY));
+    ball.setAttribute('cx', s(ballX));
+    ball.setAttribute('cy', s(ballY));
+
+    if (isPaddleTooHigh(leftY)) {
+      paddleDirection = DOWN;
+    } else if (isPaddleTooLow(leftY)) {
+      paddleDirection = UP;
     }
+
+    // set paddle pos
+    if (!isIdle) {
+      deltaY = paddleDirection === DOWN ? paddleDeltaY : -paddleDeltaY; 
+      leftY += deltaY;
+      leftPaddle.setAttribute('y', s(leftY));
+    }
+
+    const {isCollision} = getIsCollision({ballX, ballY, paddleX: leftX, paddleY: leftY});
+    const {validDeltaX, validDeltaY} = getValidBallDeltas(ballX, ballY);
+    ballDeltaX = validDeltaX;
+    ballDeltaY = validDeltaY;
+    ballX += ballDeltaX;
+    ballY += ballDeltaY;
   }, 50);
 }
 
@@ -247,6 +278,10 @@ const startGame = () => {
   enableGameControls();
   enableGameLoop();
 }
+const startSinglePlayerGame = () => {
+  enableGameControls();
+  enableSinglePlayerGameLoop();
+}
 
 function joinGame(e: Event) {
   e.preventDefault();
@@ -275,7 +310,6 @@ function createNewGame(e: Event) {
       socketEmit<WsBaseDataType>('waitingForOpponent', {playerId})
     }, 250);
   } else {
-    // play against bot
-    startGame();
+    startSinglePlayerGame();
   }
 }

@@ -1,11 +1,17 @@
-type WsBaseDataType = {
+
+type ChangePaddleDirectionPayloadType = {
   playerId: string;
+  direction: Direction;
 }
 
-type WsBallMoveType = WsBaseDataType & {
-  y: number;
-  ballX: number;
-  ballY: number;
+type ChangeBallDirectionPayloadType = {
+  playerId: string;
+  deltaX: number;
+  deltaY: number;
+}
+
+type JoinPayloadType = {
+  playerId: string;
 }
 
 type SocketType = {
@@ -34,6 +40,12 @@ enum Msg {
   ChangeBallDirection,
 }
 
+enum Direction {
+  Up,
+  Down,
+  Idle,
+}
+
 class BotSocket {
   on() {
 
@@ -57,9 +69,6 @@ let isPlayerCreator: boolean;
 let isMultiplayer: boolean;
 
 // constants
-const UP = 'UP';
-const DOWN = 'DOWN';
-const IDLE = 'IDLE';
 const svgHeight = 400;
 const svgWidth = 600;
 const paddleDeltaY = 6;
@@ -70,9 +79,10 @@ const paddleHeight = 40;
 let leftX = 50;
 let leftY = 100;
 let deltaY = 0;
-let paddleDirection = IDLE;
+let paddleDirection = Direction.Idle;
 
 // rightPaddle
+let rightPaddleDirection = Direction.Idle;
 let rightX = 500;
 let rightY = 50;
 
@@ -167,7 +177,7 @@ form.addEventListener('submit', createNewGame);
 // emit websocket msg if ball pos has changed
 const enableGameLoop = () => {
   setInterval(function emitMessageLoop() {
-    const isIdle = paddleDirection === IDLE;
+    const isIdle = paddleDirection === Direction.Idle;
     // always update the ball && the opponent's paddle pos
     rightPaddle.setAttribute('y', s(rightY));
     ball.setAttribute('cx', s(ballX));
@@ -179,14 +189,14 @@ const enableGameLoop = () => {
     }
 
     if (isPaddleTooHigh(leftY)) {
-      paddleDirection = DOWN;
+      paddleDirection = Direction.Down;
     } else if (isPaddleTooLow(leftY)) {
-      paddleDirection = UP;
+      paddleDirection = Direction.Up;
     }
 
     // set paddle pos
     if (!isIdle) {
-      deltaY = paddleDirection === DOWN ? paddleDeltaY : -paddleDeltaY; 
+      deltaY = paddleDirection === Direction.Down ? paddleDeltaY : -paddleDeltaY; 
       leftY += deltaY;
       leftPaddle.setAttribute('y', s(leftY));
     }
@@ -210,24 +220,27 @@ const enableGameLoop = () => {
 }
 
 function subscribe() {
-  let isFromOtherPlayer;
-  // socketOn<WsBallMoveType>('ballMove', function syncServer(data) {
-  //   isFromOtherPlayer = data.playerId !== playerId;
+  socketOn<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, function syncServer(data) {
+    const isFromOtherPlayer = data.playerId !== playerId;
   
-  //   if (isFromOtherPlayer) {
-  //     rightY = data.y;
-  //   }
-  //   if (!isPlayerCreator) {
-  //     ballX = data.ballX;
-  //     ballY = data.ballY;
-  //   }
-  // });
+    if (isFromOtherPlayer) {
+      rightPaddleDirection = data.direction;
+    }
+  });
+
+  socketOn<ChangeBallDirectionPayloadType>(Msg.ChangeBallDirection, function syncServer(data) {
+    const isFromOtherPlayer = data.playerId !== playerId;
   
-  let beginGameWithOpponent;
-  socketOn<WsBaseDataType>(Msg.AcceptJoin, (data) => {
-    beginGameWithOpponent = data.playerId !== playerId;
+    if (isFromOtherPlayer) {
+      ballDeltaX = data.deltaX;
+      ballDeltaY = data.deltaY;
+    }
+  });
   
-    if (beginGameWithOpponent) {
+  socketOn<JoinPayloadType>(Msg.AcceptJoin, (data) => {
+    const isFromOtherPlayer = data.playerId !== playerId;
+  
+    if (isFromOtherPlayer) {
       clearInterval(waitingForOpponentIntervalId)
     } else {
       // since we joined the game. give us control of the right paddle
@@ -240,11 +253,10 @@ function subscribe() {
     startGame();
   });
   
-  let isAskToJoin;
-  socketOn<WsBaseDataType>(Msg.AskJoin, (data) => {
-    isAskToJoin = data.playerId !== playerId;
+  socketOn<JoinPayloadType>(Msg.AskJoin, (data) => {
+    const isFromOtherPlayer = data.playerId !== playerId;
   
-    if (isAskToJoin) {
+    if (isFromOtherPlayer) {
       submitBtn.innerHTML = `Join ${data.playerId}'s Game`
       form.removeEventListener('submit', createNewGame);
       form.addEventListener('submit', joinGame);
@@ -258,13 +270,13 @@ const enableGameControls = () => {
 
     switch (e.key) {
       case 'w':
-        paddleDirection = UP;
+        paddleDirection = Direction.Up;
         break;
       case 's':
-        paddleDirection = DOWN;
+        paddleDirection = Direction.Down;
         break;
       case 'd':
-        paddleDirection = IDLE;
+        paddleDirection = Direction.Idle;
     }
   });
 }
@@ -282,7 +294,7 @@ function joinGame(e: Event) {
   playerId = s(playerName);
   isPlayerCreator = false;
 
-  socketEmit<WsBaseDataType>(Msg.AcceptJoin, {playerId})
+  socketEmit<JoinPayloadType>(Msg.AcceptJoin, {playerId})
 }
 
 function createNewGame(e: Event) {
@@ -301,6 +313,6 @@ function createNewGame(e: Event) {
   }
   // broadcast that we need an opponent for our new game
   waitingForOpponentIntervalId = window.setInterval(() => {
-    socketEmit<WsBaseDataType>(Msg.AskJoin, {playerId})
+    socketEmit<JoinPayloadType>(Msg.AskJoin, {playerId})
   }, 250);
 }

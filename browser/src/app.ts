@@ -41,11 +41,12 @@ let paddleDirection = IDLE;
 let rightX = 500;
 let rightY = 50;
 
-// ball
+// ball = radius should match what's inside index.html
+let ballRadius = 6;
 let ballX = 225;
 let ballY = 50;
-const ballDeltaX = 7;
-const ballDeltaY = 5;
+let ballDeltaX = 7;
+let ballDeltaY = 5;
 
 // dom elements
 const dummy = document.createElement('form')
@@ -58,8 +59,25 @@ let ball = document.getElementById('ball') || dummy;
 
 // helpers
 const s = (n: any) => String(n)
-const isTooHigh = (y: number) => y <= 0;
-const isTooLow = (y: number) => y + 40 >= svgHeight;
+const isPaddleTooHigh = (y: number) => y <= 0;
+const isPaddleTooLow = (y: number) => y + 40 >= svgHeight;
+const isBallTooHigh = (y: number) => y - ballRadius <= 0;
+const isBallTooLow = (y: number) => y + ballRadius >= svgHeight;
+const isTooLeft = (x: number) => x - ballRadius <= 0;
+const isTooRight = (x: number) => x + ballRadius >= svgWidth;
+const getValidBallDeltas = (ballX: number, ballY: number) => {
+  let validDeltaX = ballDeltaX;
+  let validDeltaY = ballDeltaY;
+
+  if (isBallTooHigh(ballY) || isBallTooLow(ballY)) {
+    validDeltaY = -ballDeltaY;
+  }
+  if (isTooLeft(ballX) || isTooRight(ballX)) {
+    validDeltaX = -ballDeltaX;
+  }
+
+  return {validDeltaX, validDeltaY};
+}
 function socketOn<T extends {playerId: string}>(msg: string, cb: (data: T) => void): void {
   socket.on(msg, (data: T) => {
     console.log(`received ${msg} message from ${data.playerId}`);
@@ -97,9 +115,9 @@ const enableGameLoop = () => {
       return;
     }
 
-    if (isTooHigh(leftY)) {
+    if (isPaddleTooHigh(leftY)) {
       paddleDirection = DOWN;
-    } else if (isTooLow(leftY)) {
+    } else if (isPaddleTooLow(leftY)) {
       paddleDirection = UP;
     }
 
@@ -110,6 +128,9 @@ const enableGameLoop = () => {
 
     // update ball pos if is creator
     if (isPlayerCreator) {
+      const {validDeltaX, validDeltaY} = getValidBallDeltas(ballX, ballY);
+      ballDeltaX = validDeltaX;
+      ballDeltaY = validDeltaY;
       ballX += ballDeltaX;
       ballY += ballDeltaY;
     }

@@ -4,6 +4,8 @@ type WsBaseDataType = {
 
 type WsBallMoveType = WsBaseDataType & {
   y: number;
+  ballX: number;
+  ballY: number;
 }
 
 type SocketType = {
@@ -19,6 +21,7 @@ function initSocket(io: any) {
 }
 
 let playerId: string;
+let isPlayerCreator: boolean;
 
 // constants
 const UP = 'UP';
@@ -38,6 +41,12 @@ let paddleDirection = IDLE;
 let rightX = 500;
 let rightY = 50;
 
+// ball
+let ballX = 225;
+let ballY = 50;
+const ballDeltaX = 7;
+const ballDeltaY = 5;
+
 // dom elements
 const dummy = document.createElement('form')
 const form = document.querySelector('form') || dummy;
@@ -45,6 +54,7 @@ const submitBtn = document.querySelector('button[type=submit]') || dummy;
 const board = document.getElementById('board') || dummy;
 let leftPaddle = document.getElementById('left-paddle') || dummy;
 let rightPaddle = document.getElementById('right-paddle') || dummy;
+let ball = document.getElementById('ball') || dummy;
 
 // helpers
 const s = (n: any) => String(n)
@@ -57,6 +67,9 @@ function socketOn<T extends {playerId: string}>(msg: string, cb: (data: T) => vo
     cb(data);
   })
 }
+function socketEmit<T>(msg: string, data: T): void {
+  socket.emit(msg, data)
+}
 
 // other
 let waitingForOpponentIntervalId: number;
@@ -67,14 +80,20 @@ leftPaddle.setAttribute('x', s(leftX));
 leftPaddle.setAttribute('y', s(leftY));
 rightPaddle.setAttribute('x', s(rightX));
 rightPaddle.setAttribute('y', s(rightY));
+ball.setAttribute('cx', s(ballX));
+ball.setAttribute('cy', s(ballY));
+form.addEventListener('submit', createNewGame);
 
 // emit websocket msg if ball pos has changed
 const enableGameLoop = () => {
   setInterval(function emitMessageLoop() {
-    // always update the opponent's paddle pos
+    // always update the ball && the opponent's paddle pos
     rightPaddle.setAttribute('y', s(rightY));
+    ball.setAttribute('cx', s(ballX));
+    ball.setAttribute('cy', s(ballY));
 
-    if (paddleDirection === IDLE) {
+    // only creator broadcasts ball pos so nothing to broadcast if non-creator is idle
+    if (!isPlayerCreator && paddleDirection === IDLE) {
       return;
     }
 
@@ -84,11 +103,18 @@ const enableGameLoop = () => {
       paddleDirection = UP;
     }
 
+    // set paddle pos
     deltaY = paddleDirection === DOWN ? deltaUnit : -deltaUnit; 
     leftY += deltaY;
     leftPaddle.setAttribute('y', s(leftY));
 
-    socket.emit('ballMove', {playerId, y: leftY});
+    // update ball pos if is creator
+    if (isPlayerCreator) {
+      ballX += ballDeltaX;
+      ballY += ballDeltaY;
+    }
+
+    socketEmit<WsBallMoveType>('ballMove', {playerId, y: leftY, ballX, ballY});
   }, 50);
 }
 
@@ -99,6 +125,10 @@ function subscribe() {
   
     if (isFromOtherPlayer) {
       rightY = data.y;
+    }
+    if (!isPlayerCreator) {
+      ballX = data.ballX;
+      ballY = data.ballY;
     }
   });
   
@@ -131,7 +161,6 @@ function subscribe() {
   })
 }
 
-
 const enableGameControls = () => {
   document.addEventListener('keydown', function movePaddle(e) {
     e.preventDefault();
@@ -154,16 +183,15 @@ const startGame = () => {
   enableGameLoop();
 }
 
-form.addEventListener('submit', createNewGame);
-
 function joinGame(e: Event) {
   e.preventDefault();
   const formData = new FormData(form);
   const playerName = formData.get('player-name')
 
   playerId = s(playerName);
+  isPlayerCreator = false;
 
-  socket.emit('joinGame', {playerId})
+  socketEmit<WsBaseDataType>('joinGame', {playerId})
 }
 
 function createNewGame(e: Event) {
@@ -172,9 +200,10 @@ function createNewGame(e: Event) {
   const playerName = formData.get('player-name')
 
   playerId = s(playerName);
+  isPlayerCreator = true;
 
   // broadcast that we need an opponent for our new game
   waitingForOpponentIntervalId = window.setInterval(() => {
-    socket.emit('waitingForOpponent', {playerId})
+    socketEmit<WsBaseDataType>('waitingForOpponent', {playerId})
   }, 250);
 }

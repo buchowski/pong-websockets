@@ -89,7 +89,6 @@ class BotSocket {
 const BOT_ID = 'BOT_ID'
 let playerId: string;
 let isPlayerCreator: boolean;
-let isMultiplayer: boolean;
 
 // constants
 const svgHeight = 400;
@@ -249,6 +248,7 @@ const enableGameLoop = () => {
     const {isCollision} = getIsCollision({ballX, ballY, paddleX: leftX, paddleY: leftY});
     const {isCollision: isBotCollision} = getIsCollision({ballX, ballY, paddleX: rightX, paddleY: rightY});
 
+    // we always broadcast our collisions. if it's singlePlayer we also broadcast bot collisions
     if (isCollision) {
       ballDeltaX = -ballDeltaX;
       socketEmit<CollisionPayloadType>(Msg.ChangeBallDirection, {playerId, deltaX: ballDeltaX, deltaY: ballDeltaY, ballX, ballY, paddleY: leftY});
@@ -261,8 +261,26 @@ const enableGameLoop = () => {
 }
 
 const enableBotLoop = () => {
+  let rateLimiter = 0;
   setInterval(function emitBotMsgs() {
+    if (rateLimiter > 0) {
+      rateLimiter -= 50;
+      return;
+    }
 
+    // limit direction changes to once every 1.5 seconds
+    rateLimiter = 1000 * 1.5;
+    const isBallGoingUp = ballDeltaY < 0;
+    const isBallGoingDown = !isBallGoingUp;
+    const isPaddleIdle = rightPaddleDirection === Direction.Idle;
+    const isPaddleGoingDown = rightPaddleDirection === Direction.Down;
+    const isPaddleGoingUp = rightPaddleDirection === Direction.Up;
+
+    if (isBallGoingUp && (isPaddleIdle || isPaddleGoingDown)) {
+      socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId: BOT_ID, direction: Direction.Up})
+    } else if (isBallGoingDown && (isPaddleIdle || isPaddleGoingUp)) {
+      socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId: BOT_ID, direction: Direction.Down})
+    }
   }, 50);
 }
 
@@ -344,6 +362,9 @@ const enableGameControls = () => {
 const startGame = () => {
   enableGameControls();
   enableGameLoop();
+  if (!isMultiplayer) {
+    enableBotLoop();
+  }
 }
 
 function joinGame(e: Event) {
@@ -357,11 +378,13 @@ function joinGame(e: Event) {
   socketEmit<JoinPayloadType>(Msg.AcceptJoin, {playerId})
 }
 
+// TODO hardcode this for now
+const isMultiplayer = false;
+
 function createNewGame(e: Event) {
   e.preventDefault();
   const formData = new FormData(form);
   const playerName = formData.get('player-name')
-  isMultiplayer = Boolean(formData.get('is-multiplayer'));
 
   playerId = s(playerName);
   isPlayerCreator = true;

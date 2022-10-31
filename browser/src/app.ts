@@ -85,7 +85,6 @@ class BotSocket {
   }
 }
 
-
 const BOT_ID = 'BOT_ID'
 let playerId: string;
 let isPlayerCreator: boolean;
@@ -385,9 +384,14 @@ function createNewGame(e: Event) {
   e.preventDefault();
   const formData = new FormData(form);
   const playerName = formData.get('player-name')
+  const isMultiplayer = formData.get('is-multiplayer')
 
   playerId = s(playerName);
   isPlayerCreator = true;
+
+  if (socket) {
+    return;
+  }
 
   if (isMultiplayer) {
     initSocket();

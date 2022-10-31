@@ -4,8 +4,11 @@ type ChangePaddleDirectionPayloadType = {
   direction: Direction;
 }
 
-type ChangeBallDirectionPayloadType = {
+type CollisionPayloadType = {
   playerId: string;
+  paddleY: number;
+  ballX: number;
+  ballY: number;
   deltaX: number;
   deltaY: number;
 }
@@ -14,7 +17,7 @@ type JoinPayloadType = {
   playerId: string;
 }
 
-type MsgPayload = ChangeBallDirectionPayloadType | ChangeBallDirectionPayloadType | JoinPayloadType;
+type MsgPayload = CollisionPayloadType | ChangePaddleDirectionPayloadType | JoinPayloadType;
 
 type SocketType = {
   on: (msg: Msg, cb: any) => void;
@@ -83,6 +86,7 @@ class BotSocket {
 }
 
 
+const BOT_ID = 'BOT_ID'
 let playerId: string;
 let isPlayerCreator: boolean;
 let isMultiplayer: boolean;
@@ -238,16 +242,26 @@ const setBallPosition = () => {
 }
 
 const enableGameLoop = () => {
-  setInterval(function emitMessageLoop() {
+  setInterval(function updateGameBoard() {
     setPaddleDirections();
     setPaddlePositions();
     
     const {isCollision} = getIsCollision({ballX, ballY, paddleX: leftX, paddleY: leftY});
+    const {isCollision: isBotCollision} = getIsCollision({ballX, ballY, paddleX: rightX, paddleY: rightY});
+
     if (isCollision) {
       ballDeltaX = -ballDeltaX;
-      socketEmit<ChangeBallDirectionPayloadType>(Msg.ChangeBallDirection, {playerId, deltaX: ballDeltaX, deltaY: ballDeltaY});
+      socketEmit<CollisionPayloadType>(Msg.ChangeBallDirection, {playerId, deltaX: ballDeltaX, deltaY: ballDeltaY, ballX, ballY, paddleY: leftY});
+    } else if (!isMultiplayer && isBotCollision) {
+      ballDeltaX = -ballDeltaX;
+      socketEmit<CollisionPayloadType>(Msg.ChangeBallDirection, {playerId: BOT_ID, deltaX: ballDeltaX, deltaY: ballDeltaY, ballX, ballY, paddleY: rightY});
     }
     setBallPosition();
+  }, 50);
+}
+
+const enableBotLoop = () => {
+  setInterval(function emitBotMsgs() {
 
   }, 50);
 }
@@ -261,12 +275,16 @@ function subscribe() {
     }
   });
 
-  socketOn<ChangeBallDirectionPayloadType>(Msg.ChangeBallDirection, function syncServer(data) {
+  socketOn<CollisionPayloadType>(Msg.ChangeBallDirection, function syncServer(data) {
     const isFromOtherPlayer = data.playerId !== playerId;
   
+    // whenever there's a collision we update our board to reflect the opponent's state
     if (isFromOtherPlayer) {
       ballDeltaX = data.deltaX;
       ballDeltaY = data.deltaY;
+      ballX = data.ballX;
+      ballY = data.ballY;
+      rightY = data.paddleY;
     }
   });
   

@@ -70,12 +70,9 @@ class BotSocket {
   emit(msg: Msg, data: any) {
     console.log('BotSocket emit ', msg, data);
 
-    // single player doesn't use AcceptJoin or AskJoin skip on() call
-    if (msg === Msg.AcceptJoin) {
+    // single player doesn't use AcceptJoin or AskJoin
+    if (msg === Msg.AcceptJoin || msg === Msg.AskJoin) {
       return;
-    } else if (msg === Msg.AskJoin) {
-      clearInterval(waitingForOpponentIntervalId)
-      startGame();
     }
 
     const cb = this.onHandlerMap[msg];
@@ -88,6 +85,7 @@ class BotSocket {
 const BOT_ID = 'BOT_ID'
 let playerId: string;
 let isPlayerCreator: boolean;
+let isMultiplayerGameToJoin = false;
 
 // constants
 const svgHeight = 400;
@@ -117,7 +115,8 @@ let ballDeltaY = 5;
 
 // dom elements
 const dummy = document.createElement('form')
-const form = document.querySelector('form') || dummy;
+const singlePlayerBtn = document.querySelector('button[name=singleplayer]') || dummy;
+const multiPlayerBtn = document.querySelector('button[name=multiplayer]') || dummy;
 const submitBtn = document.querySelector('button[type=submit]') || dummy;
 const board = document.getElementById('board') || dummy;
 let leftPaddle = document.getElementById('left-paddle') || dummy;
@@ -194,7 +193,8 @@ rightPaddle.setAttribute('x', s(rightX));
 rightPaddle.setAttribute('y', s(rightY));
 ball.setAttribute('cx', s(ballX));
 ball.setAttribute('cy', s(ballY));
-form.addEventListener('submit', createNewGame);
+singlePlayerBtn.addEventListener('click', createNewSinglePlayerGame);
+multiPlayerBtn.addEventListener('click', multiPlayerGame);
 
 const setPaddleDirections = () => {
   // our paddle
@@ -325,9 +325,7 @@ function subscribe() {
     const isFromOtherPlayer = data.playerId !== playerId;
   
     if (isFromOtherPlayer) {
-      submitBtn.innerHTML = `Join ${data.playerId}'s Game`
-      form.removeEventListener('submit', createNewGame);
-      form.addEventListener('submit', joinGame);
+      isMultiplayerGameToJoin = true;
     }
   })
 }
@@ -361,17 +359,10 @@ const enableGameControls = () => {
 const startGame = () => {
   enableGameControls();
   enableGameLoop();
-  if (!isMultiplayer) {
-    enableBotLoop();
-  }
 }
 
 function joinGame(e: Event) {
   e.preventDefault();
-  const formData = new FormData(form);
-  const playerName = formData.get('player-name')
-
-  playerId = s(playerName);
   isPlayerCreator = false;
 
   socketEmit<JoinPayloadType>(Msg.AcceptJoin, {playerId})
@@ -380,24 +371,34 @@ function joinGame(e: Event) {
 // TODO hardcode this for now
 const isMultiplayer = false;
 
-function createNewGame(e: Event) {
-  e.preventDefault();
-  const formData = new FormData(form);
-  const playerName = formData.get('player-name')
-  const isMultiplayer = formData.get('is-multiplayer')
+function disableCreateButtons() {
+  singlePlayerBtn.setAttribute('disabled', 'true');
+  multiPlayerBtn.setAttribute('disabled', 'true');
+}
 
-  playerId = s(playerName);
+function createNewSinglePlayerGame(e: Event) {
   isPlayerCreator = true;
 
   if (socket) {
     return;
   }
 
-  if (isMultiplayer) {
-    initSocket();
-  } else {
-    initBotSocket();
+  initBotSocket();
+  enableGameControls();
+  enableGameLoop();
+  enableBotLoop();
+  disableCreateButtons();
+}
+
+function multiPlayerGame(e: Event) {
+  isPlayerCreator = true;
+
+  if (socket) {
+    return;
   }
+
+  initSocket();
+  disableCreateButtons();
   // broadcast that we need an opponent for our new game
   waitingForOpponentIntervalId = window.setInterval(() => {
     socketEmit<JoinPayloadType>(Msg.AskJoin, {playerId})

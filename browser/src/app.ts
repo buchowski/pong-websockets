@@ -82,9 +82,13 @@ class BotSocket {
   }
 }
 
-const BOT_ID = 'BOT_ID'
-let playerId: string;
-let isPlayerCreator: boolean;
+enum PlayerIds {
+  Bot = 'BOT',
+  Creator = 'CREATOR',
+  Guest = 'GUEST',
+}
+
+let playerId: PlayerIds;
 let isMultiplayerGameToJoin = false;
 
 // constants
@@ -117,6 +121,7 @@ let ballDeltaY = 5;
 const dummy = document.createElement('form')
 const singlePlayerBtn = document.querySelector('button[name=singleplayer]') || dummy;
 const multiPlayerBtn = document.querySelector('button[name=multiplayer]') || dummy;
+const joinBtn = document.querySelector('button[name=join]') || dummy;
 const submitBtn = document.querySelector('button[type=submit]') || dummy;
 const board = document.getElementById('board') || dummy;
 let leftPaddle = document.getElementById('left-paddle') || dummy;
@@ -195,6 +200,7 @@ ball.setAttribute('cx', s(ballX));
 ball.setAttribute('cy', s(ballY));
 singlePlayerBtn.addEventListener('click', createNewSinglePlayerGame);
 multiPlayerBtn.addEventListener('click', multiPlayerGame);
+joinBtn.addEventListener('click', joinGame);
 
 const setPaddleDirections = () => {
   // our paddle
@@ -253,7 +259,7 @@ const enableGameLoop = () => {
       socketEmit<CollisionPayloadType>(Msg.ChangeBallDirection, {playerId, deltaX: ballDeltaX, deltaY: ballDeltaY, ballX, ballY, paddleY: leftY});
     } else if (!isMultiplayer && isBotCollision) {
       ballDeltaX = -ballDeltaX;
-      socketEmit<CollisionPayloadType>(Msg.ChangeBallDirection, {playerId: BOT_ID, deltaX: ballDeltaX, deltaY: ballDeltaY, ballX, ballY, paddleY: rightY});
+      socketEmit<CollisionPayloadType>(Msg.ChangeBallDirection, {playerId: PlayerIds.Bot, deltaX: ballDeltaX, deltaY: ballDeltaY, ballX, ballY, paddleY: rightY});
     }
     setBallPosition();
   }, 50);
@@ -276,9 +282,9 @@ const enableBotLoop = () => {
     const isPaddleGoingUp = rightPaddleDirection === Direction.Up;
 
     if (isBallGoingUp && (isPaddleIdle || isPaddleGoingDown)) {
-      socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId: BOT_ID, direction: Direction.Up})
+      socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId: PlayerIds.Bot, direction: Direction.Up})
     } else if (isBallGoingDown && (isPaddleIdle || isPaddleGoingUp)) {
-      socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId: BOT_ID, direction: Direction.Down})
+      socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId: PlayerIds.Bot, direction: Direction.Down})
     }
   }, 50);
 }
@@ -321,13 +327,13 @@ function subscribe() {
     startGame();
   });
   
-  socketOn<JoinPayloadType>(Msg.AskJoin, (data) => {
-    const isFromOtherPlayer = data.playerId !== playerId;
+  // socketOn<JoinPayloadType>(Msg.AskJoin, (data) => {
+  //   const isFromOtherPlayer = data.playerId !== playerId;
   
-    if (isFromOtherPlayer) {
-      isMultiplayerGameToJoin = true;
-    }
-  })
+  //   if (isFromOtherPlayer) {
+  //     isMultiplayerGameToJoin = true;
+  //   }
+  // })
 }
 
 const enableGameControls = () => {
@@ -361,23 +367,18 @@ const startGame = () => {
   enableGameLoop();
 }
 
-function joinGame(e: Event) {
-  e.preventDefault();
-  isPlayerCreator = false;
-
-  socketEmit<JoinPayloadType>(Msg.AcceptJoin, {playerId})
-}
 
 // TODO hardcode this for now
-const isMultiplayer = false;
+let isMultiplayer = false;
 
 function disableCreateButtons() {
   singlePlayerBtn.setAttribute('disabled', 'true');
   multiPlayerBtn.setAttribute('disabled', 'true');
+  joinBtn.setAttribute('disabled', 'true');
 }
 
 function createNewSinglePlayerGame(e: Event) {
-  isPlayerCreator = true;
+  playerId = PlayerIds.Creator;
 
   if (socket) {
     return;
@@ -391,7 +392,8 @@ function createNewSinglePlayerGame(e: Event) {
 }
 
 function multiPlayerGame(e: Event) {
-  isPlayerCreator = true;
+  playerId = PlayerIds.Creator;
+  isMultiplayer = true;
 
   if (socket) {
     return;
@@ -399,8 +401,20 @@ function multiPlayerGame(e: Event) {
 
   initSocket();
   disableCreateButtons();
+
   // broadcast that we need an opponent for our new game
   waitingForOpponentIntervalId = window.setInterval(() => {
     socketEmit<JoinPayloadType>(Msg.AskJoin, {playerId})
   }, 250);
+}
+
+function joinGame() {
+  playerId = PlayerIds.Guest;
+  isMultiplayer = true;
+
+  if (!socket) {
+    initSocket();
+  }
+  disableCreateButtons();
+  socketEmit<JoinPayloadType>(Msg.AcceptJoin, {playerId})
 }

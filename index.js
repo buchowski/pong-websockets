@@ -8,22 +8,33 @@ const io = new Server(httpServer, {
   // options
 });
 
+// msgs
+const AskJoin = 'ASK_JOIN';
+const AcceptJoin = 'ACCEPT_JOIN';
+const ChangePaddleDirection = 'CHANGE_PADDLE_DIRECTION';
+const ChangeBallDirection = 'CHANGE_BALL_DIRECTION';
+
 io.on("connection", (socket) => {
   console.log('we are connected')
 
-  socket.on('ballMove', (data) => {
+  socket.on(ChangeBallDirection, (data) => {
     console.log('ballMove message: ' + data);
-    io.emit('ballMove', data);
+    io.emit(ChangeBallDirection, data);
   });
 
-  socket.on('waitingForOpponent', (data) => {
+  socket.on(AskJoin, (data) => {
     console.log('waiting message: ' + data);
-    io.emit('waitingForOpponent', data);
+    io.emit(AskJoin, data);
   });
 
-  socket.on('joinGame', (data) => {
+  socket.on(AcceptJoin, (data) => {
     console.log('join message: ' + data);
-    io.emit('joinGame', data);
+    io.emit(AcceptJoin, data);
+  });
+
+  socket.on(ChangePaddleDirection, (data) => {
+    console.log('change paddle message: ' + data);
+    io.emit(ChangePaddleDirection, data);
   });
 
   socket.on('disconnect', () => {

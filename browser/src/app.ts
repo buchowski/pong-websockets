@@ -131,6 +131,8 @@ enum PlayerIds {
 let playerId: PlayerIds;
 let waitingForOpponentIntervalId: number;
 let isMultiplayer = true;
+// if isUseBotMode then let a bot control myPaddle
+let isUseBotMode = false;
 
 // constants
 const svgHeight = 400;
@@ -139,6 +141,7 @@ const paddleDeltaY = 6;
 const paddleWidth = 10;
 const paddleHeight = 40;
 
+// paddles
 const leftPaddle = new Paddle(50, 100, 0, Direction.Idle, 'left-paddle');
 const rightPaddle = new Paddle(550, 50, 0, Direction.Idle, 'right-paddle');
 let myPaddle = leftPaddle;
@@ -157,6 +160,7 @@ const singlePlayerBtn = document.querySelector('button[name=singleplayer]') || d
 const multiPlayerBtn = document.querySelector('button[name=init-socket]') || dummy;
 const startBtn = document.querySelector('button[name=start-multiplayer]') || dummy;
 const joinBtn = document.querySelector('button[name=join-multiplayer]') || dummy;
+const botCheckbox = document.querySelector('input[name=is-use-bot]') as HTMLInputElement;
 const board = document.getElementById('board') || dummy;
 let ball = document.getElementById('ball') || dummy;
 
@@ -227,6 +231,7 @@ singlePlayerBtn.addEventListener('click', createNewSinglePlayerGame);
 multiPlayerBtn.addEventListener('click', openSocket);
 startBtn.addEventListener('click', startMultiPlayerGame);
 joinBtn.addEventListener('click', joinMultiPlayerGame);
+botCheckbox.addEventListener('input', toggleBotMode);
 
 const setPaddleDirections = () => {
   if (isPaddleTooHigh(myPaddle.y)) {
@@ -277,25 +282,29 @@ const enableGameLoop = () => {
   }, 50);
 }
 
-const enableBotLoop = () => {
-  let rateLimiter = 0;
-  setInterval(function emitBotMsgs() {
-    if (rateLimiter > 0) {
-      rateLimiter -= 50;
-      return;
-    }
-
-    // limit direction changes to once every 1.5 seconds
-    rateLimiter = 1000 * 1.5;
+function getNewBotDirection() {
     const isBallGoingUp = ballDeltaY < 0;
     const isBallGoingDown = !isBallGoingUp;
 
     if (isBallGoingUp && (oppPaddle.isIdle || oppPaddle.isGoingDown)) {
-      socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId: PlayerIds.Bot, direction: Direction.Up})
+      return Direction.Up;
     } else if (isBallGoingDown && (oppPaddle.isIdle || oppPaddle.isGoingUp)) {
-      socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId: PlayerIds.Bot, direction: Direction.Down})
+      return Direction.Down;
     }
-  }, 50);
+}
+
+const enableBotLoop = () => {
+  function emitBotMsgs() {
+    const newBotDirection = getNewBotDirection();
+
+    if (newBotDirection) {
+      socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId: PlayerIds.Bot, direction: newBotDirection})
+    }
+  }
+
+  // set the bot in motion and then update it every 1.5 seconds
+  emitBotMsgs();
+  setInterval(emitBotMsgs, 1500);
 }
 
 function subscribe() {
@@ -357,7 +366,8 @@ const enableGameControls = () => {
       direction = Direction.Idle;
     }
 
-    if (!direction) {
+    // if isUseBotMode then a bot is controlling myPaddle
+    if (!direction || isUseBotMode) {
       return;
     }
 
@@ -381,10 +391,13 @@ function disableGameTypeButtons() {
 }
 
 function disableAllButtons() {
-  singlePlayerBtn.setAttribute('disabled', 'true');
-  multiPlayerBtn.setAttribute('disabled', 'true');
+  disableGameTypeButtons();
   startBtn.setAttribute('disabled', 'true');
   joinBtn.setAttribute('disabled', 'true');
+}
+
+function toggleBotMode() {
+  isUseBotMode = botCheckbox.checked; 
 }
 
 function createNewSinglePlayerGame(e: Event) {

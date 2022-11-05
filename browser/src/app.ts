@@ -282,27 +282,41 @@ const enableGameLoop = () => {
   }, 50);
 }
 
-function getNewBotDirection() {
+function getNewBotDirection(paddle: Paddle) {
     const isBallGoingUp = ballDeltaY < 0;
     const isBallGoingDown = !isBallGoingUp;
 
-    if (isBallGoingUp && (oppPaddle.isIdle || oppPaddle.isGoingDown)) {
+    if (isBallGoingUp && (paddle.isIdle || paddle.isGoingDown)) {
       return Direction.Up;
-    } else if (isBallGoingDown && (oppPaddle.isIdle || oppPaddle.isGoingUp)) {
+    } else if (isBallGoingDown && (paddle.isIdle || paddle.isGoingUp)) {
       return Direction.Down;
     }
 }
 
 const enableBotLoop = () => {
+  const isSingleplayer = !isMultiplayer;
   function emitBotMsgs() {
-    const newBotDirection = getNewBotDirection();
+    // a bot always controls oppPaddle in single player mode
+    if (isSingleplayer) {
+      const newBotDirection = getNewBotDirection(oppPaddle);
+  
+      if (newBotDirection) {
+        socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId: PlayerIds.Bot, direction: newBotDirection})
+      }
+    }
 
-    if (newBotDirection) {
-      socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId: PlayerIds.Bot, direction: newBotDirection})
+    // if we chose isUseBotMode then allow a bot to control myPaddle
+    if (isUseBotMode) {
+      const newMyPaddleBotDirection = getNewBotDirection(myPaddle);
+  
+      if (newMyPaddleBotDirection) {
+        myPaddle.direction = newMyPaddleBotDirection;
+        socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId, direction: newMyPaddleBotDirection})
+      }
     }
   }
 
-  // set the bot in motion and then update it every 1.5 seconds
+  // set any bots in motion and then update them every 1.5 seconds
   emitBotMsgs();
   setInterval(emitBotMsgs, 1500);
 }
@@ -341,7 +355,7 @@ function subscribe() {
     }
     
     disableAllButtons();
-    startGame();
+    startMultiplayerGame();
   });
   
   socketOn<JoinPayloadType>(Msg.AskJoin, (data) => {
@@ -380,9 +394,10 @@ const enableGameControls = () => {
   });
 }
 
-const startGame = () => {
+const startMultiplayerGame = () => {
   enableGameControls();
   enableGameLoop();
+  enableBotLoop();
 }
 
 function disableGameTypeButtons() {

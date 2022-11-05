@@ -129,7 +129,8 @@ enum PlayerIds {
 }
 
 let playerId: PlayerIds;
-let isMultiplayerGameToJoin = false;
+let waitingForOpponentIntervalId: number;
+let isMultiplayer = true;
 
 // constants
 const svgHeight = 400;
@@ -151,11 +152,11 @@ let ballDeltaX = 7;
 let ballDeltaY = 5;
 
 // dom elements
-const dummy = document.createElement('form')
+const dummy = document.createElement('div')
 const singlePlayerBtn = document.querySelector('button[name=singleplayer]') || dummy;
-const multiPlayerBtn = document.querySelector('button[name=multiplayer]') || dummy;
-const joinBtn = document.querySelector('button[name=join]') || dummy;
-const submitBtn = document.querySelector('button[type=submit]') || dummy;
+const multiPlayerBtn = document.querySelector('button[name=init-socket]') || dummy;
+const startBtn = document.querySelector('button[name=start-multiplayer]') || dummy;
+const joinBtn = document.querySelector('button[name=join-multiplayer]') || dummy;
 const board = document.getElementById('board') || dummy;
 let ball = document.getElementById('ball') || dummy;
 
@@ -214,9 +215,6 @@ function socketEmit<T>(msg: Msg, data: T): void {
   socket.emit(msg, data)
 }
 
-// other
-let waitingForOpponentIntervalId: number;
-
 // initialize
 board.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
 leftPaddle.el.setAttribute('x', s(leftPaddle.x));
@@ -226,18 +224,17 @@ rightPaddle.el.setAttribute('y', s(rightPaddle.y));
 ball.setAttribute('cx', s(ballX));
 ball.setAttribute('cy', s(ballY));
 singlePlayerBtn.addEventListener('click', createNewSinglePlayerGame);
-multiPlayerBtn.addEventListener('click', multiPlayerGame);
-joinBtn.addEventListener('click', joinGame);
+multiPlayerBtn.addEventListener('click', openSocket);
+startBtn.addEventListener('click', startMultiPlayerGame);
+joinBtn.addEventListener('click', joinMultiPlayerGame);
 
 const setPaddleDirections = () => {
-  // our paddle
   if (isPaddleTooHigh(myPaddle.y)) {
     myPaddle.direction = Direction.Down;
   } else if (isPaddleTooLow(myPaddle.y)) {
     myPaddle.direction = Direction.Up;
   }
   
-  // opponent's paddle
   if (isPaddleTooHigh(oppPaddle.y)) {
     oppPaddle.direction = Direction.Down;
   } else if (isPaddleTooLow(oppPaddle.y)) {
@@ -326,24 +323,25 @@ function subscribe() {
   socketOn<JoinPayloadType>(Msg.AcceptJoin, (data) => {
     const isFromOtherPlayer = data.playerId !== playerId;
   
-    if (isFromOtherPlayer) {
-      clearInterval(waitingForOpponentIntervalId)
-    } else {
+    clearInterval(waitingForOpponentIntervalId)
+
+    if (!isFromOtherPlayer) {
       // since we joined the game. give us control of the right paddle
       myPaddle = rightPaddle;
       oppPaddle = leftPaddle;
     }
-  
+    
+    disableAllButtons();
     startGame();
   });
   
-  // socketOn<JoinPayloadType>(Msg.AskJoin, (data) => {
-  //   const isFromOtherPlayer = data.playerId !== playerId;
+  socketOn<JoinPayloadType>(Msg.AskJoin, (data) => {
+    const isFromOtherPlayer = data.playerId !== playerId;
   
-  //   if (isFromOtherPlayer) {
-  //     isMultiplayerGameToJoin = true;
-  //   }
-  // })
+    if (isFromOtherPlayer) {
+      joinBtn.removeAttribute('disabled');
+    }
+  })
 }
 
 const enableGameControls = () => {
@@ -377,18 +375,21 @@ const startGame = () => {
   enableGameLoop();
 }
 
-
-// TODO hardcode this for now
-let isMultiplayer = false;
-
-function disableCreateButtons() {
+function disableGameTypeButtons() {
   singlePlayerBtn.setAttribute('disabled', 'true');
   multiPlayerBtn.setAttribute('disabled', 'true');
+}
+
+function disableAllButtons() {
+  singlePlayerBtn.setAttribute('disabled', 'true');
+  multiPlayerBtn.setAttribute('disabled', 'true');
+  startBtn.setAttribute('disabled', 'true');
   joinBtn.setAttribute('disabled', 'true');
 }
 
 function createNewSinglePlayerGame(e: Event) {
   playerId = PlayerIds.Creator;
+  isMultiplayer = false;
 
   if (socket) {
     return;
@@ -398,19 +399,17 @@ function createNewSinglePlayerGame(e: Event) {
   enableGameControls();
   enableGameLoop();
   enableBotLoop();
-  disableCreateButtons();
+  disableAllButtons();
 }
 
-function multiPlayerGame(e: Event) {
-  playerId = PlayerIds.Creator;
-  isMultiplayer = true;
-
-  if (socket) {
-    return;
-  }
-
+function openSocket() {
   initSocket();
-  disableCreateButtons();
+  disableGameTypeButtons();
+  startBtn.removeAttribute('disabled');
+}
+
+function startMultiPlayerGame(e: Event) {
+  playerId = PlayerIds.Creator;
 
   // broadcast that we need an opponent for our new game
   waitingForOpponentIntervalId = window.setInterval(() => {
@@ -418,13 +417,8 @@ function multiPlayerGame(e: Event) {
   }, 250);
 }
 
-function joinGame() {
+function joinMultiPlayerGame() {
   playerId = PlayerIds.Guest;
-  isMultiplayer = true;
 
-  if (!socket) {
-    initSocket();
-  }
-  disableCreateButtons();
   socketEmit<JoinPayloadType>(Msg.AcceptJoin, {playerId})
 }

@@ -82,6 +82,46 @@ class BotSocket {
   }
 }
 
+class Paddle {
+  x: number;
+  y: number;
+  deltaY: number;
+  direction: Direction;
+  el: HTMLElement;
+
+  constructor(x: number, y: number, deltaY: number, direction: Direction, id: string) {
+    this.x = x;
+    this.y = y;
+    this.deltaY = deltaY;
+    this.direction = direction;
+    this.el = document.getElementById(id) || dummy;
+  }
+
+  get isIdle() : boolean {
+    return this.direction === Direction.Idle;
+  }
+  get isGoingUp() : boolean {
+    return this.direction === Direction.Up;
+  }
+  get isGoingDown() : boolean {
+    return this.direction === Direction.Down;
+  }
+  get leftBorder() : number { return this.x; }
+  get rightBorder() : number { return this.x + paddleWidth; }
+  get topBorder() : number { return this.y; }
+  get bottomBorder() : number { return this.y + paddleHeight; }
+
+  updatePosition() {
+    if (this.isIdle) {
+      return;
+    }
+
+    const deltaY = this.isGoingDown ? paddleDeltaY : -paddleDeltaY; 
+    this.y += deltaY;
+    this.el.setAttribute('y', s(this.y));
+  }
+}
+
 enum PlayerIds {
   Bot = 'BOT',
   Creator = 'CREATOR',
@@ -98,17 +138,10 @@ const paddleDeltaY = 6;
 const paddleWidth = 10;
 const paddleHeight = 40;
 
-// leftPaddle
-let leftX = 50;
-let leftY = 100;
-let deltaY = 0;
-let paddleDirection = Direction.Idle;
-
-// rightPaddle
-let rightX = 500;
-let rightY = 50;
-let rightDeltaY = 0;
-let rightPaddleDirection = Direction.Idle;
+const leftPaddle = new Paddle(50, 100, 0, Direction.Idle, 'left-paddle');
+const rightPaddle = new Paddle(550, 50, 0, Direction.Idle, 'right-paddle');
+let myPaddle = leftPaddle;
+let oppPaddle = rightPaddle;
 
 // ball = radius should match what's inside index.html
 let ballRadius = 6;
@@ -124,8 +157,6 @@ const multiPlayerBtn = document.querySelector('button[name=multiplayer]') || dum
 const joinBtn = document.querySelector('button[name=join]') || dummy;
 const submitBtn = document.querySelector('button[type=submit]') || dummy;
 const board = document.getElementById('board') || dummy;
-let leftPaddle = document.getElementById('left-paddle') || dummy;
-let rightPaddle = document.getElementById('right-paddle') || dummy;
 let ball = document.getElementById('ball') || dummy;
 
 // helpers
@@ -152,20 +183,16 @@ const getValidBallDeltas = (ballX: number, ballY: number) => {
 const isPointWithinRange = (point: number, startRange: number, endRange: number) => {
   return point >= startRange && point <= endRange;
 }
-type GetIsCollisionArgType = {ballX: number, ballY: number, paddleX: number, paddleY: number};
-const getIsCollision = ({ballX, ballY, paddleX, paddleY}: GetIsCollisionArgType) => {
+type GetIsCollisionArgType = {ballX: number, ballY: number, paddle: Paddle};
+const getIsCollision = ({ballX, ballY, paddle}: GetIsCollisionArgType) => {
   const ballLeftMost = ballX - ballRadius;
   const ballRightMost = ballX + ballRadius;
   const ballTopMost = ballY + ballRadius;
   const ballBottomMost = ballY - ballRadius;
-  const paddleLeftMost = paddleX;
-  const paddleRightMost = paddleX + paddleWidth;
-  const paddleTopMost = paddleY;
-  const paddleBottomMost = paddleY + paddleHeight;
-  const doesBallRightOverlap = isPointWithinRange(ballRightMost, paddleLeftMost, paddleRightMost);
-  const doesBallLeftOverlap = isPointWithinRange(ballLeftMost, paddleLeftMost, paddleRightMost);
-  const doesBallTopOverlap = isPointWithinRange(ballTopMost, paddleTopMost, paddleBottomMost);
-  const doesBallBottomOverlap = isPointWithinRange(ballBottomMost, paddleTopMost, paddleBottomMost);
+  const doesBallRightOverlap = isPointWithinRange(ballRightMost, paddle.leftBorder, paddle.rightBorder);
+  const doesBallLeftOverlap = isPointWithinRange(ballLeftMost, paddle.leftBorder, paddle.rightBorder);
+  const doesBallTopOverlap = isPointWithinRange(ballTopMost, paddle.topBorder, paddle.bottomBorder);
+  const doesBallBottomOverlap = isPointWithinRange(ballBottomMost, paddle.topBorder, paddle.bottomBorder);
   const doesXOverlap = doesBallRightOverlap || doesBallLeftOverlap;
   const doesYOverlap = doesBallBottomOverlap || doesBallTopOverlap;
 
@@ -192,10 +219,10 @@ let waitingForOpponentIntervalId: number;
 
 // initialize
 board.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
-leftPaddle.setAttribute('x', s(leftX));
-leftPaddle.setAttribute('y', s(leftY));
-rightPaddle.setAttribute('x', s(rightX));
-rightPaddle.setAttribute('y', s(rightY));
+leftPaddle.el.setAttribute('x', s(leftPaddle.x));
+leftPaddle.el.setAttribute('y', s(leftPaddle.y));
+rightPaddle.el.setAttribute('x', s(rightPaddle.x));
+rightPaddle.el.setAttribute('y', s(rightPaddle.y));
 ball.setAttribute('cx', s(ballX));
 ball.setAttribute('cy', s(ballY));
 singlePlayerBtn.addEventListener('click', createNewSinglePlayerGame);
@@ -204,35 +231,23 @@ joinBtn.addEventListener('click', joinGame);
 
 const setPaddleDirections = () => {
   // our paddle
-  if (isPaddleTooHigh(leftY)) {
-    paddleDirection = Direction.Down;
-  } else if (isPaddleTooLow(leftY)) {
-    paddleDirection = Direction.Up;
+  if (isPaddleTooHigh(myPaddle.y)) {
+    myPaddle.direction = Direction.Down;
+  } else if (isPaddleTooLow(myPaddle.y)) {
+    myPaddle.direction = Direction.Up;
   }
   
   // opponent's paddle
-  if (isPaddleTooHigh(rightY)) {
-    rightPaddleDirection = Direction.Down;
-  } else if (isPaddleTooLow(rightY)) {
-    rightPaddleDirection = Direction.Up;
+  if (isPaddleTooHigh(oppPaddle.y)) {
+    oppPaddle.direction = Direction.Down;
+  } else if (isPaddleTooLow(oppPaddle.y)) {
+    oppPaddle.direction = Direction.Up;
   }
 }
 
 const setPaddlePositions = () => {
-    const isLeftIdle = paddleDirection === Direction.Idle;
-    const isRightIdle = rightPaddleDirection === Direction.Idle;
-
-    if (!isLeftIdle) {
-      deltaY = paddleDirection === Direction.Down ? paddleDeltaY : -paddleDeltaY; 
-      leftY += deltaY;
-      leftPaddle.setAttribute('y', s(leftY));
-    }
-
-    if (!isRightIdle) {
-      rightDeltaY = rightPaddleDirection === Direction.Down ? paddleDeltaY : -paddleDeltaY; 
-      rightY += rightDeltaY;
-      rightPaddle.setAttribute('y', s(rightY));
-    }
+  myPaddle.updatePosition();
+  oppPaddle.updatePosition();
 }
 
 const setBallPosition = () => {
@@ -250,16 +265,16 @@ const enableGameLoop = () => {
     setPaddleDirections();
     setPaddlePositions();
     
-    const {isCollision} = getIsCollision({ballX, ballY, paddleX: leftX, paddleY: leftY});
-    const {isCollision: isBotCollision} = getIsCollision({ballX, ballY, paddleX: rightX, paddleY: rightY});
+    const {isCollision} = getIsCollision({ballX, ballY, paddle: myPaddle});
+    const {isCollision: isBotCollision} = getIsCollision({ballX, ballY, paddle: oppPaddle});
 
     // we always broadcast our collisions. if it's singlePlayer we also broadcast bot collisions
     if (isCollision) {
       ballDeltaX = -ballDeltaX;
-      socketEmit<CollisionPayloadType>(Msg.ChangeBallDirection, {playerId, deltaX: ballDeltaX, deltaY: ballDeltaY, ballX, ballY, paddleY: leftY});
+      socketEmit<CollisionPayloadType>(Msg.ChangeBallDirection, {playerId, deltaX: ballDeltaX, deltaY: ballDeltaY, ballX, ballY, paddleY: myPaddle.y});
     } else if (!isMultiplayer && isBotCollision) {
       ballDeltaX = -ballDeltaX;
-      socketEmit<CollisionPayloadType>(Msg.ChangeBallDirection, {playerId: PlayerIds.Bot, deltaX: ballDeltaX, deltaY: ballDeltaY, ballX, ballY, paddleY: rightY});
+      socketEmit<CollisionPayloadType>(Msg.ChangeBallDirection, {playerId: PlayerIds.Bot, deltaX: ballDeltaX, deltaY: ballDeltaY, ballX, ballY, paddleY: oppPaddle.y});
     }
     setBallPosition();
   }, 50);
@@ -277,13 +292,10 @@ const enableBotLoop = () => {
     rateLimiter = 1000 * 1.5;
     const isBallGoingUp = ballDeltaY < 0;
     const isBallGoingDown = !isBallGoingUp;
-    const isPaddleIdle = rightPaddleDirection === Direction.Idle;
-    const isPaddleGoingDown = rightPaddleDirection === Direction.Down;
-    const isPaddleGoingUp = rightPaddleDirection === Direction.Up;
 
-    if (isBallGoingUp && (isPaddleIdle || isPaddleGoingDown)) {
+    if (isBallGoingUp && (oppPaddle.isIdle || oppPaddle.isGoingDown)) {
       socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId: PlayerIds.Bot, direction: Direction.Up})
-    } else if (isBallGoingDown && (isPaddleIdle || isPaddleGoingUp)) {
+    } else if (isBallGoingDown && (oppPaddle.isIdle || oppPaddle.isGoingUp)) {
       socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId: PlayerIds.Bot, direction: Direction.Down})
     }
   }, 50);
@@ -294,7 +306,7 @@ function subscribe() {
     const isFromOtherPlayer = data.playerId !== playerId;
   
     if (isFromOtherPlayer) {
-      rightPaddleDirection = data.direction;
+      oppPaddle.direction = data.direction;
     }
   });
 
@@ -307,7 +319,7 @@ function subscribe() {
       ballDeltaY = data.deltaY;
       ballX = data.ballX;
       ballY = data.ballY;
-      rightY = data.paddleY;
+      oppPaddle.y = data.paddleY;
     }
   });
   
@@ -318,10 +330,8 @@ function subscribe() {
       clearInterval(waitingForOpponentIntervalId)
     } else {
       // since we joined the game. give us control of the right paddle
-      // TODO use better names for paddle vars
-      const tempPaddle = leftPaddle;
-      leftPaddle = rightPaddle;
-      rightPaddle = tempPaddle
+      myPaddle = rightPaddle;
+      oppPaddle = leftPaddle;
     }
   
     startGame();
@@ -353,10 +363,10 @@ const enableGameControls = () => {
       return;
     }
 
-    const isUpdateDirection = direction !== paddleDirection;
+    const isUpdateDirection = direction !== myPaddle.direction;
 
     if (isUpdateDirection) {
-      paddleDirection = direction;
+      myPaddle.direction = direction;
       socketEmit<ChangePaddleDirectionPayloadType>(Msg.ChangePaddleDirection, {playerId, direction})
     }
   });
